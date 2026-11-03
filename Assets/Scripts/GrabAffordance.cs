@@ -24,7 +24,7 @@ public sealed class GrabAffordance : MonoBehaviour
     private XRGrabInteractable grab;
     private Renderer[] renderers;
     private Color[] originals;
-    private readonly MaterialPropertyBlock block = new MaterialPropertyBlock();
+    private MaterialPropertyBlock block;
 
     private AudioSource source;
     private AudioClip handleClick;
@@ -36,6 +36,7 @@ public sealed class GrabAffordance : MonoBehaviour
     private void Awake()
     {
         grab = GetComponent<XRGrabInteractable>();
+        block = new MaterialPropertyBlock();
         CacheRenderers();
 
         source = GetComponent<AudioSource>();
