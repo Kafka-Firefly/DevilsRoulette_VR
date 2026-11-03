@@ -27,10 +27,19 @@ public sealed class ShotgunController : MonoBehaviour
     [SerializeField, Min(0.1f)] private float selfAimDistance = 2.5f;
 
     private XRGrabInteractable grabInteractable;
+    private RouletteRoundDisplay roundDisplay;
     private bool[] chambers;
     private int chamberIndex;
+    private int roundNumber = 1;
+    private int targetHits;
 
     private void Awake()
+    {
+        Initialize();
+    }
+
+    /// <summary>Configures runtime state. Awake calls this; the demo capture calls it explicitly in Edit mode.</summary>
+    public void Initialize()
     {
         grabInteractable = GetComponent<XRGrabInteractable>();
         if (audioSource == null)
@@ -42,18 +51,27 @@ public sealed class ShotgunController : MonoBehaviour
         if (playerHead == null && Camera.main != null)
             playerHead = Camera.main.transform;
 
+        roundDisplay = GetComponent<RouletteRoundDisplay>();
+        if (roundDisplay == null)
+            roundDisplay = gameObject.AddComponent<RouletteRoundDisplay>();
+
         ShuffleChambers();
+        UpdateRoundDisplay("Grip to pick up. Aim at the target.");
     }
 
     private void OnEnable()
     {
         grabInteractable.activated.AddListener(OnActivated);
+        grabInteractable.selectEntered.AddListener(OnGrabbed);
     }
 
     private void OnDisable()
     {
         if (grabInteractable != null)
+        {
             grabInteractable.activated.RemoveListener(OnActivated);
+            grabInteractable.selectEntered.RemoveListener(OnGrabbed);
+        }
     }
 
     /// <summary>Starts a new randomized round. One live round is used by default.</summary>
@@ -76,16 +94,49 @@ public sealed class ShotgunController : MonoBehaviour
 
     private void OnActivated(ActivateEventArgs args)
     {
+        Fire(args);
+    }
+
+    /// <summary>Fires the next chamber. Public so demos and tests can drive the prototype.</summary>
+    public void Fire()
+    {
+        Fire(null);
+    }
+
+    /// <summary>Raised after each shot: (liveRound, targetHit).</summary>
+    public event System.Action<bool, bool> ShotResolved;
+
+    /// <summary>Puts the live round in a specific chamber. Used by the demo capture.</summary>
+    public void ForceLiveChamber(int liveIndex)
+    {
+        ShuffleChambers();
+        if (chambers == null || chambers.Length == 0)
+            return;
+
+        int index = Mathf.Clamp(liveIndex, 0, chambers.Length - 1);
+        for (int i = 0; i < chambers.Length; i++)
+            chambers[i] = i == index;
+        chamberIndex = 0;
+    }
+
+    private void Fire(ActivateEventArgs args)
+    {
         if (barrelTip == null || chambers == null)
             return;
 
         if (chamberIndex >= chambers.Length)
-            ShuffleChambers();
+        {
+            UpdateRoundDisplay("Round complete. Release and pick up the gun for a new round.");
+            return;
+        }
 
         bool liveRound = chambers[chamberIndex++];
         bool aimedAtSelf = IsAimedAtPlayer();
         bool hitTarget = Physics.Raycast(barrelTip.position, barrelTip.forward,
             out RaycastHit hit, range, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
+        bool targetWasHit = hitTarget &&
+                            hit.collider.GetComponentInParent<TargetHitReceiver>() is TargetHitReceiver;
+        string feedback;
 
         if (liveRound)
         {
@@ -93,11 +144,23 @@ public sealed class ShotgunController : MonoBehaviour
             if (muzzleFlash != null)
                 muzzleFlash.Play();
 
-            if (hitTarget && hit.collider.GetComponentInParent<TargetHitReceiver>() is TargetHitReceiver target)
-                target.OnShot();
+            if (targetWasHit && hit.collider.GetComponentInParent<TargetHitReceiver>() is TargetHitReceiver target)
+            {
+                target.OnShot(hit.point);
+                targetHits++;
+                feedback = "TARGET HIT. Good shot.";
+            }
+            else if (aimedAtSelf)
+            {
+                feedback = "Live round. No player damage.";
+            }
+            else
+            {
+                feedback = "Live round. The target was missed.";
+            }
 
             if (aimedAtSelf)
-                Debug.Log("Live round aimed toward the player (prototype game event only).", this);
+                Debug.Log("Live round aimed toward the player; this prototype causes no damage.", this);
 
             SendHaptic(args, 0.8f, 0.16f);
         }
@@ -105,7 +168,33 @@ public sealed class ShotgunController : MonoBehaviour
         {
             Play(clickSound);
             SendHaptic(args, 0.25f, 0.07f);
+            feedback = "Empty chamber.";
         }
+
+        ShotResolved?.Invoke(liveRound, targetWasHit);
+        UpdateRoundDisplay(feedback);
+    }
+
+    private void OnGrabbed(SelectEnterEventArgs args)
+    {
+        if (chambers != null && chamberIndex >= chambers.Length)
+        {
+            roundNumber++;
+            ShuffleChambers();
+            UpdateRoundDisplay("New round. Aim at the target and press the trigger.");
+            return;
+        }
+
+        UpdateRoundDisplay("Gun picked up. Press the trigger to fire.");
+    }
+
+    private void UpdateRoundDisplay(string feedback)
+    {
+        if (chambers != null && chamberIndex >= chambers.Length)
+            feedback = "ROUND COMPLETE. RELEASE THE GUN.";
+
+        if (roundDisplay != null)
+            roundDisplay.Show(roundNumber, chamberIndex, chamberCount, targetHits, feedback);
     }
 
     private bool IsAimedAtPlayer()
@@ -170,6 +259,8 @@ public sealed class ShotgunController : MonoBehaviour
 
     private static void SendHaptic(ActivateEventArgs args, float amplitude, float duration)
     {
+        if (args == null)
+            return;
         if (args.interactorObject is XRBaseInputInteractor inputInteractor)
             inputInteractor.SendHapticImpulse(amplitude, duration);
     }

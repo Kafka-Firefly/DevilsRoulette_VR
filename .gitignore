@@ -36,3 +36,13 @@ sysinfo.txt
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Art pass preview renders
+ArtPreviews/
+
+# Demo renders
+Demo_ThePit.mp4
+
+
+# Unity use tracker temp
+.utmp/
