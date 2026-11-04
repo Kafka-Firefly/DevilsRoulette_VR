@@ -19,7 +19,16 @@ public static class PitAndroidBuilder
             // Quest 2 and 3 run Android 12L (API 32) on current Horizon OS, so keep the floor low
             // enough that the APK installs on any headset in the lab.
             PlayerSettings.Android.minSdkVersion = AndroidSdkVersions.AndroidApiLevel29;
-            PlayerSettings.Android.targetSdkVersion = AndroidSdkVersions.AndroidApiLevel34;
+            PlayerSettings.Android.targetSdkVersion = AndroidSdkVersions.AndroidApiLevel35;
+
+            // Vulkan first, GLES3 as a fallback: a Vulkan-only build fails to start
+            // outright on drivers that do not expose the extensions OpenXR needs.
+            PlayerSettings.SetUseDefaultGraphicsAPIs(BuildTarget.Android, false);
+            PlayerSettings.SetGraphicsAPIs(BuildTarget.Android, new[]
+            {
+                UnityEngine.Rendering.GraphicsDeviceType.Vulkan,
+                UnityEngine.Rendering.GraphicsDeviceType.OpenGLES3,
+            });
 
             EditorUserBuildSettings.buildAppBundle = false;
 
